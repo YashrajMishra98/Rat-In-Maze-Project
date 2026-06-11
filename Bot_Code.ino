@@ -4,142 +4,170 @@ int trigPinc = 10;
 int echoPinc = 11;
 int trigPinr = 12;
 int echoPinr = 13;
+
 int enA = 3;
 int in1 = 2;
 int in2 = 4;
+
 int enB = 6;
 int in3 = 5;
 int in4 = 7;
-int sp = 70;
+
 long durationl, durationc, durationr;
-long lcm = 0, ccm = 0, rcm = 0;
+float lcm, ccm, rcm;
+
+int baseSpeed = 100;
+
+// PID constants
+float Kp = 5.0;
+float Ki = 0.01;
+float Kd = 2.0;
+
+float error = 0;
+float previousError = 0;
+float integral = 0;
 
 void setup() {
   Serial.begin(9600);
 
   pinMode(trigPinl, OUTPUT);
   pinMode(echoPinl, INPUT);
+
   pinMode(trigPinc, OUTPUT);
   pinMode(echoPinc, INPUT);
+
   pinMode(trigPinr, OUTPUT);
   pinMode(echoPinr, INPUT);
 
-  // Motor driver pins setup
   pinMode(enA, OUTPUT);
   pinMode(in1, OUTPUT);
   pinMode(in2, OUTPUT);
+
   pinMode(enB, OUTPUT);
   pinMode(in3, OUTPUT);
   pinMode(in4, OUTPUT);
+
+  moveForward();
 }
 
 void loop() {
-  digitalWrite(trigPinl, LOW);
-  delayMicroseconds(5);
-  digitalWrite(trigPinl, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPinl, LOW);
 
-  durationl = pulseIn(echoPinl, HIGH);
-  lcm = (durationl / 2) / 29.1;
+  lcm = getDistance(trigPinl, echoPinl);
+  ccm = getDistance(trigPinc, echoPinc);
+  rcm = getDistance(trigPinr, echoPinr);
 
-  digitalWrite(trigPinc, LOW);
-  delayMicroseconds(5);
-  digitalWrite(trigPinc, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPinc, LOW);
+  Serial.print("L=");
+  Serial.print(lcm);
+  Serial.print(" C=");
+  Serial.print(ccm);
+  Serial.print(" R=");
+  Serial.println(rcm);
 
-  durationc = pulseIn(echoPinc, HIGH);
-  ccm = (durationc / 2) / 29.1;
+  // Obstacle directly ahead
+  if (ccm < 15) {
 
-  digitalWrite(trigPinr, LOW);
-  delayMicroseconds(5);
-  digitalWrite(trigPinr, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPinr, LOW);
-
-  durationr = pulseIn(echoPinr, HIGH);
-  rcm = (durationr / 2) / 29.1;
-
-  if (lcm >= 15 && rcm >= 15 && ccm >= 10) {
-    moveForward();
-  }
-  else if (lcm >= 15 && rcm <= 15 && ccm >= 10) {
-    turnRight();
-  }
-  else if (lcm <= 15 && rcm >= 15 && ccm >= 10) {
-    turnRight();
-  }
-  else if (lcm >= 15 && rcm >= 15 && ccm <= 10) {
-    if (lcm < rcm) {
-      turnRight();
-      delay(500);
-      moveForward();
-      }
-    else {
-      turnLeft();
-      delay(500);
-      moveForward();
-    }
-  }
-  else if (lcm <= 15 && rcm >= 15 && ccm <= 10) {
     stopBot();
-    delay(500);
-    turnRight();
-    delay(1500);
-  }
-  else if (lcm >= 15 && rcm <= 15 && ccm <= 10) {
-    stopBot();
-    delay(500);
-    turnLeft();
-    delay(1500);
-  }
-  else if (lcm <= 15 && rcm <= 15 && ccm >= 10) {
-    if (lcm < rcm) {
-      turnRight();
-      delay(500);
-      moveForward();
-      }
-    else {
-      turnLeft();
-      delay(500);
-      moveForward();
+    delay(200);
+
+    if (lcm > rcm) {
+      rotateLeft();
+    } else {
+      rotateRight();
     }
+
+    delay(400);
+    return;
   }
-  else {
-    moveForward();
-  }
+
+  // PID wall following
+  error = lcm - rcm;
+
+  integral += error;
+
+  float derivative = error - previousError;
+
+  float pidOutput =
+      Kp * error +
+      Ki * integral +
+      Kd * derivative;
+
+  previousError = error;
+
+  int leftMotorSpeed  = baseSpeed - pidOutput;
+  int rightMotorSpeed = baseSpeed + pidOutput;
+
+  leftMotorSpeed = constrain(leftMotorSpeed, 0, 255);
+  rightMotorSpeed = constrain(rightMotorSpeed, 0, 255);
+
+  setMotorSpeed(leftMotorSpeed, rightMotorSpeed);
+
+  delay(50);
+}
+
+float getDistance(int trigPin, int echoPin) {
+
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(5);
+
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+
+  digitalWrite(trigPin, LOW);
+
+  long duration = pulseIn(echoPin, HIGH);
+
+  return (duration * 0.0343) / 2.0;
 }
 
 void moveForward() {
+
   digitalWrite(in1, HIGH);
   digitalWrite(in2, LOW);
+
   digitalWrite(in3, HIGH);
   digitalWrite(in4, LOW);
-  analogWrite(enA, sp);
-  analogWrite(enB, sp);
 }
-void turnLeft() {
+
+void setMotorSpeed(int leftSpeed, int rightSpeed) {
+
+  moveForward();
+
+  analogWrite(enA, leftSpeed);
+  analogWrite(enB, rightSpeed);
+}
+
+void rotateLeft() {
+
   digitalWrite(in1, LOW);
   digitalWrite(in2, HIGH);
+
   digitalWrite(in3, HIGH);
   digitalWrite(in4, LOW);
-  analogWrite(enA, sp);
-  analogWrite(enB, sp);
+
+  analogWrite(enA, 120);
+  analogWrite(enB, 120);
 }
-void turnRight() {
+
+void rotateRight() {
+
   digitalWrite(in1, HIGH);
   digitalWrite(in2, LOW);
+
   digitalWrite(in3, LOW);
   digitalWrite(in4, HIGH);
-  analogWrite(enA, sp);
-  analogWrite(enB, sp);
+
+  analogWrite(enA, 120);
+  analogWrite(enB, 120);
 }
+
 void stopBot() {
-  digitalWrite(in1, LOW);  
-  digitalWrite(in2, LOW);
-  digitalWrite(in3, LOW);  
-  digitalWrite(in4, LOW);
+
   analogWrite(enA, 0);
   analogWrite(enB, 0);
+
+  digitalWrite(in1, LOW);
+  digitalWrite(in2, LOW);
+
+  digitalWrite(in3, LOW);
+  digitalWrite(in4, LOW);
 }
